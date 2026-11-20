@@ -8,11 +8,18 @@
 
 ## 安装
 
+从 npm 安装（发布后可用）：
+
 ```sh
 dsh plugin add dsh-find-job
 ```
 
-或在 DSH 的插件管理里安装本包。
+或从源码安装：DSH 插件管理 → 安装 bundle → 选择本仓库目录（`find-job-bundle`）。
+
+## 前置条件
+
+- DSH 中已配置可用的模型（插件与对话框使用同一条模型路由）。
+- 数据默认保存在 `~/.find-job/job_matcher.db`，可用环境变量 `FIND_JOB_DB_PATH` 或插件配置 `dbPath` 覆盖。
 
 ## 功能
 
