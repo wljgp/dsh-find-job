@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "find-job",
+  "version": "0.1.27",
+  "description": "在 BOSS直聘 / 猎聘职位详情页点「存入职位库」，把职位自动保存到本地 find-job。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:18999/*",
+    "*://*.zhipin.com/*",
+    "*://*.liepin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.zhipin.com/*",
+        "*://*.liepin.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

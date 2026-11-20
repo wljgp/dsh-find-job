@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Find Job Assistant",
+    "description": "Job-hunting assistant for DeepSeek Harness: profile your skills, batch-score job postings, draft outreach messages, tailor your resume, and analyze gaps.\n\nFor active job seekers: batch-identify postings worth applying to, with match reasons, greetings, and resume rewrites in one pass.\nFor those still employed: see clearly how you compare with target roles.\n\nRuns and stores everything locally.",
+    "detail": "docs/DETAIL.md"
+  }
+}

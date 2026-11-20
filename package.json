@@ -1,0 +1,52 @@
+{
+  "name": "dsh-find-job",
+  "version": "0.5.9",
+  "type": "module",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "find-job"
+  ],
+  "description": "求职助手：剖析能力、批量匹配职位、生成打招呼语、简历调整、差距分析。本地运行与存储，LLM 使用 DSH 中配置的模型。",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "jobs",
+    "resume",
+    "career"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wljgp/dsh-find-job.git"
+  },
+  "homepage": "https://github.com/wljgp/dsh-find-job#readme",
+  "author": "wljgp"
+}
