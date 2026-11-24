@@ -1545,15 +1545,23 @@ async function handleAction(ctx, dbPath, model, provider, body) {
       } catch (e) {
         return { ok: false, message: '读取模型服务失败：' + String((e && e.message) || e) }
       }
-      // 排序：DeepSeek Account → DeepSeek 官方 → 其他服务（kimi 等）→ 识图/组合路由
+      // 排序：DeepSeek Account → DeepSeek 官方 → 其他服务（kimi 等）→ 识图/组合路由（组合内部同样按 account → 官方 → 其他 → 通用 vision-http 排）
       const providerRank = (id) => {
         const s = String(id || '').toLowerCase()
-        if (s === 'deepseek-account') return 0
-        if (s === 'deepseek-official') return 1
-        if (s === 'vision-http' || /-vision$/.test(s)) return 3
-        return 2
+        if (s === 'deepseek-account') return [0, 0]
+        if (s === 'deepseek-official') return [1, 0]
+        if (s === 'vision-http') return [3, 9]
+        if (/-vision$/.test(s)) {
+          const base = s.replace(/-vision$/, '')
+          const sub = base === 'deepseek-account' ? 0 : (base === 'deepseek-official' || base === 'deepseek') ? 1 : 2
+          return [3, sub]
+        }
+        return [2, 0]
       }
-      providers.sort((a, b) => providerRank(a.id) - providerRank(b.id))
+      providers.sort((a, b) => {
+        const x = providerRank(a.id); const y = providerRank(b.id)
+        return (x[0] - y[0]) || (x[1] - y[1])
+      })
       const models = {}
       for (const p of providers) {
         try {
