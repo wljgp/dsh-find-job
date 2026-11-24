@@ -784,8 +784,13 @@ window.__ModuleLoader__.load({
         post(ROUTE_ACTION, { action: 'llm_catalog' }).then((c) => {
           setCatalog(c)
           const cur = (c && c.current) || {}
-          setProvider(cur.provider || '')
-          setModel(cur.model || '')
+          const provs = (c && c.providers) || []
+          const p0 = cur.provider || cur.effective_provider || (provs[0] ? provs[0].id : '')
+          const list0 = (c && c.models && c.models[p0]) || []
+          const want = cur.model || cur.effective_model || ''
+          const m0 = list0.some((m) => m.id === want) ? want : (list0[0] ? list0[0].id : '')
+          setProvider(p0)
+          setModel(m0)
           setEffort(cur.effort || '')
         }).catch((e) => setErr(String((e && e.message) || e)))
       }, [])
@@ -817,7 +822,11 @@ window.__ModuleLoader__.load({
           h('label', null, '模型服务',
             h('select', {
               value: provider,
-              onChange: (e) => { setProvider(e.target.value); setModel(''); setEffort('') },
+              onChange: (e) => {
+                const v = e.target.value
+                const list = (catalog && catalog.models && catalog.models[v]) || []
+                setProvider(v); setModel(list[0] ? list[0].id : ''); setEffort('')
+              },
             }, (catalog ? catalog.providers : []).map((p) => h('option', { key: p.id, value: p.id }, p.name + '（' + p.id + '）')))),
           h('label', null, '模型',
             h('select', {
