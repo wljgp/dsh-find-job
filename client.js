@@ -30,7 +30,6 @@ window.__ModuleLoader__.load({
 .fj-root .llm-panel select { height: 34px; }
 .fj-root .llm-panel .row { justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .fj-root .llm-hint { font-size: 12px; color: #6b7280; margin: 0; }
-.fj-root .llm-check { display: flex; flex-direction: row; align-items: center; gap: 6px; font-size: 12.5px; color: #6b7280; }
 .fj-root .llm-err { color: #dc2626; }
 .fj-root main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; width: 100%; flex: 1; overflow: auto; min-height: 0; }
 .fj-root .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
@@ -780,7 +779,6 @@ window.__ModuleLoader__.load({
       const [provider, setProvider] = useState('')
       const [model, setModel] = useState('')
       const [effort, setEffort] = useState('')
-      const [showVision, setShowVision] = useState(false)
 
       useEffect(() => {
         post(ROUTE_ACTION, { action: 'llm_catalog' }).then((c) => {
@@ -795,9 +793,6 @@ window.__ModuleLoader__.load({
       const models = (catalog && catalog.models && catalog.models[provider]) || []
       const curModel = models.find((m) => m.id === model) || null
       const efforts = curModel ? curModel.efforts : []
-      // 识图类路由（vision-router 注册的 vision-http / *-vision）默认隐藏：它们只用于看图，打分用不到
-      const isVisionRoute = (id) => id === 'vision-http' || /-vision$/i.test(id)
-      const provList = (catalog ? catalog.providers : []).filter((p) => showVision || !isVisionRoute(p.id))
 
       const apply = async () => {
         setSaving(true); setErr('')
@@ -823,7 +818,7 @@ window.__ModuleLoader__.load({
             h('select', {
               value: provider,
               onChange: (e) => { setProvider(e.target.value); setModel(''); setEffort('') },
-            }, provList.map((p) => h('option', { key: p.id, value: p.id }, p.name + '（' + p.id + '）')))),
+            }, (catalog ? catalog.providers : []).map((p) => h('option', { key: p.id, value: p.id }, p.name + '（' + p.id + '）')))),
           h('label', null, '模型',
             h('select', {
               value: model,
@@ -841,9 +836,6 @@ window.__ModuleLoader__.load({
               h('option', { value: '' }, efforts.length ? '默认（不指定）' : '该模型不支持推理强度'),
               efforts.map((x) => h('option', { key: x.id, value: x.id }, x.name)))),
           err ? h('p', { className: 'llm-hint llm-err' }, err) : null,
-          h('label', { className: 'llm-check' },
-            h('input', { type: 'checkbox', checked: showVision, onChange: (e) => setShowVision(e.target.checked) }),
-            '显示识图类路由（vision，仅供看图，平时用不到）'),
           h('p', { className: 'llm-hint' }, '当前：' + ((catalog && catalog.current && (catalog.current.effective_provider || '—') + ' · ' + (catalog.current.effective_model || '—')) || '读取中…')),
           h('p', { className: 'llm-hint' }, '只影响插件的解析、打分与生成，不影响 DSH 对话。'),
           h('div', { className: 'row' },
