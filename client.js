@@ -21,6 +21,16 @@ window.__ModuleLoader__.load({
 .fj-root .tab { border: none; background: transparent; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 14px; color: #6b7280; }
 .fj-root .tab:hover { background: #eef1f5; }
 .fj-root .tab.active { background: #2563eb; color: #fff; }
+.fj-root .topbar-right { display: flex; align-items: center; gap: 8px; }
+.fj-root .llm-ctl { position: relative; }
+.fj-root .llm-btn { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fj-root .llm-backdrop { position: fixed; inset: 0; z-index: 59; background: transparent; }
+.fj-root .llm-panel { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; width: 340px; background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; box-shadow: 0 10px 28px rgba(15,23,42,.14); padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.fj-root .llm-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: #6b7280; }
+.fj-root .llm-panel select { height: 34px; }
+.fj-root .llm-panel .row { justify-content: flex-end; gap: 8px; margin-top: 2px; }
+.fj-root .llm-hint { font-size: 12px; color: #6b7280; margin: 0; }
+.fj-root .llm-err { color: #dc2626; }
 .fj-root main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; width: 100%; flex: 1; overflow: auto; min-height: 0; }
 .fj-root .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; }
 .fj-root .card h2 { margin: 0 0 8px; font-size: 15px; }
@@ -761,6 +771,80 @@ window.__ModuleLoader__.load({
           adjustBody))
     }
 
+    // 顶栏模型设置：模型服务 / 模型 / 推理强度（只影响插件自身的解析、打分与生成）
+    function LlmPanel({ onClose, onSaved }) {
+      const [catalog, setCatalog] = useState(null)
+      const [err, setErr] = useState('')
+      const [saving, setSaving] = useState(false)
+      const [provider, setProvider] = useState('')
+      const [model, setModel] = useState('')
+      const [effort, setEffort] = useState('')
+
+      useEffect(() => {
+        post(ROUTE_ACTION, { action: 'llm_catalog' }).then((c) => {
+          setCatalog(c)
+          const cur = (c && c.current) || {}
+          setProvider(cur.provider || '')
+          setModel(cur.model || '')
+          setEffort(cur.effort || '')
+        }).catch((e) => setErr(String((e && e.message) || e)))
+      }, [])
+
+      const models = (catalog && catalog.models && catalog.models[provider]) || []
+      const curModel = models.find((m) => m.id === model) || null
+      const efforts = curModel ? curModel.efforts : []
+
+      const apply = async () => {
+        setSaving(true); setErr('')
+        try {
+          await post(ROUTE_ACTION, { action: 'save_llm_settings', provider, model, effort })
+          if (onSaved) await onSaved()
+          onClose()
+        } catch (e) { setErr(String((e && e.message) || e)) } finally { setSaving(false) }
+      }
+      const reset = async () => {
+        setSaving(true); setErr('')
+        try {
+          await post(ROUTE_ACTION, { action: 'reset_llm_settings' })
+          if (onSaved) await onSaved()
+          onClose()
+        } catch (e) { setErr(String((e && e.message) || e)) } finally { setSaving(false) }
+      }
+
+      return [
+        h('div', { key: 'bd', className: 'llm-backdrop', onClick: onClose }),
+        h('div', { key: 'p', className: 'llm-panel' },
+          h('label', null, '模型服务',
+            h('select', {
+              value: provider,
+              onChange: (e) => { setProvider(e.target.value); setModel(''); setEffort('') },
+            }, (catalog ? catalog.providers : []).map((p) => h('option', { key: p.id, value: p.id }, p.name + '（' + p.id + '）')))),
+          h('label', null, '模型',
+            h('select', {
+              value: model,
+              onChange: (e) => { setModel(e.target.value); setEffort('') },
+              disabled: !models.length,
+            },
+              h('option', { value: '' }, models.length ? '请选择模型' : '该服务暂无可用模型'),
+              models.map((m) => h('option', { key: m.id, value: m.id }, m.name)))),
+          h('label', null, '推理强度',
+            h('select', {
+              value: effort,
+              onChange: (e) => setEffort(e.target.value),
+              disabled: !efforts.length,
+            },
+              h('option', { value: '' }, efforts.length ? '默认（不指定）' : '该模型不支持推理强度'),
+              efforts.map((x) => h('option', { key: x.id, value: x.id }, x.name)))),
+          err ? h('p', { className: 'llm-hint llm-err' }, err) : null,
+          h('p', { className: 'llm-hint' }, '当前：' + ((catalog && catalog.current && (catalog.current.effective_provider || '—') + ' · ' + (catalog.current.effective_model || '—')) || '读取中…')),
+          h('p', { className: 'llm-hint' }, '只影响插件的解析、打分与生成，不影响 DSH 对话。'),
+          h('div', { className: 'row' },
+            h('button', { className: 'btn small', type: 'button', onClick: reset, disabled: saving }, '恢复默认'),
+            h('button', { className: 'btn small', type: 'button', onClick: onClose, disabled: saving }, '取消'),
+            h('button', { className: 'btn small primary', type: 'button', onClick: apply, disabled: saving || !provider || !model }, saving ? '保存中…' : '应用'))),
+      ]
+    }
+
     function App() {
       const [data, setData] = useState(null)
       const [error, setError] = useState('')
@@ -774,6 +858,7 @@ window.__ModuleLoader__.load({
       const [matchPlatform, setMatchPlatform] = useState('')
       const [jobFilter, setJobFilter] = useState(null)
       const [focusJob, setFocusJob] = useState(null)
+      const [llmOpen, setLlmOpen] = useState(false)
       const pollRef = useRef({ wasRunning: false })
       const revRef = useRef('')
       const mainRef = useRef(null)
@@ -855,10 +940,21 @@ window.__ModuleLoader__.load({
       }, [load])
 
       const tabs = [['profile', '能力画像'], ['jobs', '职位库'], ['matches', '匹配结果'], ['tips', '求职建议']]
+      const llm = (data && data.llm) || {}
+      const llmText = llm.provider
+        ? llm.provider + ' · ' + llm.model + (llm.effort ? ' · ' + llm.effort : '')
+        : '默认模型 · ' + (llm.effective_model || llm.default_model || 'deepseek-v4-pro')
       return h('div', { className: 'fj-root' },
         h('header', { className: 'topbar' },
           h('div', { className: 'brand' }, '求职助手 ', h('span', { className: 'sub' }, 'DSH 插件 · 本地')),
-          h('nav', { className: 'tabs' }, tabs.map(([k, label]) => h('button', { key: k, className: 'tab' + (tab === k ? ' active' : ''), onClick: () => switchTab(k) }, label)))),
+          h('nav', { className: 'tabs' }, tabs.map(([k, label]) => h('button', { key: k, className: 'tab' + (tab === k ? ' active' : ''), onClick: () => switchTab(k) }, label))),
+          h('div', { className: 'topbar-right' },
+            h('div', { className: 'llm-ctl' },
+              h('button', {
+                className: 'btn small llm-btn', type: 'button', title: '模型设置：' + llmText,
+                onClick: () => setLlmOpen((v) => !v),
+              }, llmText),
+              llmOpen ? h(LlmPanel, { key: 'llmpanel', onClose: () => setLlmOpen(false), onSaved: load }) : null))),
         h('main', { ref: mainRef },
           loading && !data ? h('p', { className: 'muted' }, '读取中…') : null,
           error && !data ? h('div', { className: 'banner-err' }, '读取失败：' + error) : null,

@@ -321,6 +321,8 @@ function parseJsonLoose(text) {
 const PROVIDER_AUTH_RE = /MISSING_CREDENTIAL|no API key|ACCOUNT_SIGN_IN_REQUIRED|unauthorized|invalid_api_key|not signed in|登录|401|403/i
 
 let PLUGIN_CONFIG = {}
+// 用户在面板里选定的模型设置（留空=跟随 DSH 默认）
+let LLM_SETTINGS = { provider: '', model: '', effort: '' }
 
 function pickProvider(ctx) {
   let ids = []
@@ -332,8 +334,16 @@ function pickProvider(ctx) {
   return ids[0]
 }
 
-async function streamOnce(ctx, provider, model, messages, limit, temperature, signal) {
+async function streamOnce(ctx, provider, model, messages, limit, temperature, signal, effort) {
   const assembler = new BlockAssembler()
+  if (effort) {
+    // 推理强度只能通过 prepareCall 的 configure 回调设置，且会被校验在模型支持的档位内
+    const config = { provider, model, messages, maxTokens: limit }
+    if (temperature !== undefined) config.temperature = temperature
+    const prepared = await ctx.llm.prepareCall(config, signal, (controls) => ({ ...controls, reasoningEffort: effort }))
+    for await (const chunk of prepared.stream(prepared.config)) assembler.push(chunk)
+    return assembler
+  }
   for await (const chunk of ctx.llm.stream({ provider, model, messages, maxTokens: limit, temperature, signal })) {
     assembler.push(chunk)
   }
@@ -344,13 +354,16 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
   const messages = []
   if (system) messages.push({ role: 'system', content: [{ type: 'text', text: system }] })
   messages.push({ role: 'user', content: [{ type: 'text', text: user }] })
-  const pid = provider || pickProvider(ctx)
+  // 面板里显式选择的模型优先；否则用调用方传入（= DSH 默认/插件配置）
+  const pid = (LLM_SETTINGS && LLM_SETTINGS.provider) || provider || pickProvider(ctx)
+  const mid = (LLM_SETTINGS && LLM_SETTINGS.model) || model
+  const effort = (LLM_SETTINGS && LLM_SETTINGS.effort) || ''
   let limit = Math.max(1000, Number(maxTokens) || 4000)
   let lastError = null
   for (let attempt = 0; attempt < 3; attempt++) {
     let assembler
     try {
-      assembler = await streamOnce(ctx, pid, model, messages, limit, temperature, signal)
+      assembler = await streamOnce(ctx, pid, mid, messages, limit, temperature, signal, effort)
     } catch (e) {
       const msg = String((e && e.message) || e)
       if (PROVIDER_AUTH_RE.test(msg)) {
@@ -391,6 +404,16 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
 
 function readSettings(db) {
   return Object.fromEntries(db.prepare('SELECT key, value FROM settings').all().map(r => [r.key, r.value]))
+}
+
+function readLlmSettings(db) {
+  const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('llm_provider','llm_model','llm_effort')").all()
+  const m = Object.fromEntries(rows.map(r => [r.key, r.value]))
+  return { provider: m.llm_provider || '', model: m.llm_model || '', effort: m.llm_effort || '' }
+}
+
+function saveSettingValue(db, key, value) {
+  db.prepare('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, String(value == null ? '' : value))
 }
 
 function readProfile(db) {
@@ -686,6 +709,18 @@ function buildPanelPayload(db) {
   return {
     ok: true,
     parse: { running: !!(JOBS.parse && JOBS.parse.running), ok: JOBS.parse ? JOBS.parse.ok : null, message: (JOBS.parse && JOBS.parse.message) || '' },
+    llm: (() => {
+      const ad = readAgentDefaults() || {}
+      return {
+        provider: (LLM_SETTINGS && LLM_SETTINGS.provider) || '',
+        model: (LLM_SETTINGS && LLM_SETTINGS.model) || '',
+        effort: (LLM_SETTINGS && LLM_SETTINGS.effort) || '',
+        default_provider: ad.provider || '',
+        default_model: ad.model || DEFAULT_MODEL,
+        effective_provider: (LLM_SETTINGS && LLM_SETTINGS.provider) || (PLUGIN_CONFIG && PLUGIN_CONFIG.provider) || ad.provider || 'deepseek-account',
+        effective_model: (LLM_SETTINGS && LLM_SETTINGS.model) || (PLUGIN_CONFIG && PLUGIN_CONFIG.model) || ad.model || DEFAULT_MODEL,
+      }
+    })(),
     adjusts,
     gap_report: savedGapReport || null,
     adjust_feedback: safeJson(settings.adjust_feedback, {}),
@@ -1503,6 +1538,73 @@ async function handleAction(ctx, dbPath, model, provider, body) {
       try { saveResumeAdjust(db2, direction, content, summary, ref.used, examples) } finally { db2.close() }
       return { ok: true, message: '简历调整已生成（基于参考集 ' + ref.used.length + ' 个职位）', direction, 基于参考职位数: ref.used.length, 调整说明: summary, 改写示例: examples, 简历正文: content }
     }
+    case 'llm_catalog': {
+      const providers = []
+      try {
+        for (const p of ctx.llm.listProviders() || []) providers.push({ id: p.id, name: p.name || p.id })
+      } catch (e) {
+        return { ok: false, message: '读取模型服务失败：' + String((e && e.message) || e) }
+      }
+      const models = {}
+      for (const p of providers) {
+        try {
+          const list = await ctx.llm.listModels(p.id)
+          models[p.id] = list.map(m => ({
+            id: m.id,
+            name: m.name || m.id,
+            efforts: (m.reasoning && Array.isArray(m.reasoning.efforts) ? m.reasoning.efforts : []).map(e => ({ id: e.id, name: e.name || e.id })),
+          }))
+        } catch {
+          models[p.id] = []
+        }
+      }
+      const ad = readAgentDefaults() || {}
+      const cfg = PLUGIN_CONFIG || {}
+      return {
+        ok: true,
+        providers,
+        models,
+        current: {
+          provider: (LLM_SETTINGS && LLM_SETTINGS.provider) || '',
+          model: (LLM_SETTINGS && LLM_SETTINGS.model) || '',
+          effort: (LLM_SETTINGS && LLM_SETTINGS.effort) || '',
+          effective_provider: (LLM_SETTINGS && LLM_SETTINGS.provider) || cfg.provider || provider || ad.provider || 'deepseek-account',
+          effective_model: (LLM_SETTINGS && LLM_SETTINGS.model) || cfg.model || model || DEFAULT_MODEL,
+        },
+      }
+    }
+    case 'save_llm_settings': {
+      const providerId = String(body.provider || '').trim()
+      const modelId = String(body.model || '').trim()
+      const effortId = String(body.effort || '').trim()
+      if (!providerId || !modelId) return { ok: false, message: '请选择模型服务和模型' }
+      let list
+      try {
+        list = await ctx.llm.listModels(providerId)
+      } catch (e) {
+        return { ok: false, message: '模型服务不可用：' + String((e && e.message) || e).slice(0, 160) }
+      }
+      const hit = list.find(m => m.id === modelId)
+      if (!hit) return { ok: false, message: '该模型不在所选服务的可用列表中' }
+      const efforts = (hit.reasoning && Array.isArray(hit.reasoning.efforts) ? hit.reasoning.efforts : []).map(e => e.id)
+      if (effortId && !efforts.includes(effortId)) return { ok: false, message: '该模型不支持所选推理强度' }
+      const db = openDb(dbPath)
+      try {
+        saveSettingValue(db, 'llm_provider', providerId)
+        saveSettingValue(db, 'llm_model', modelId)
+        saveSettingValue(db, 'llm_effort', effortId)
+      } finally { db.close() }
+      LLM_SETTINGS = { provider: providerId, model: modelId, effort: effortId }
+      return { ok: true, message: '模型设置已保存：' + modelId + (effortId ? ' · ' + effortId : ''), llm: LLM_SETTINGS }
+    }
+    case 'reset_llm_settings': {
+      const db = openDb(dbPath)
+      try {
+        for (const k of ['llm_provider', 'llm_model', 'llm_effort']) db.prepare('DELETE FROM settings WHERE key = ?').run(k)
+      } finally { db.close() }
+      LLM_SETTINGS = { provider: '', model: '', effort: '' }
+      return { ok: true, message: '已恢复为 DSH 默认模型' }
+    }
     case 'status': {
       return { ok: true, batch: JOBS.batch, parse: JOBS.parse }
     }
@@ -1521,6 +1623,12 @@ export function apply(ctx, config = {}) {
   const dbPath = config.dbPath || DEFAULT_DB_PATH
   const agentDefaults = readAgentDefaults()
   const model = config.model || (agentDefaults && agentDefaults.model) || DEFAULT_MODEL
+  try {
+    const db0 = openDb(dbPath)
+    try { LLM_SETTINGS = readLlmSettings(db0) } finally { db0.close() }
+  } catch (e) {
+    console.warn('[dsh-find-job] 读取模型设置失败：' + ((e && e.message) || e))
+  }
 
   function resolveProvider() {
     return pickProvider(ctx)
