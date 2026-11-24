@@ -1545,6 +1545,15 @@ async function handleAction(ctx, dbPath, model, provider, body) {
       } catch (e) {
         return { ok: false, message: '读取模型服务失败：' + String((e && e.message) || e) }
       }
+      // 排序：DeepSeek Account → DeepSeek 官方 → 其他服务（kimi 等）→ 识图/组合路由
+      const providerRank = (id) => {
+        const s = String(id || '').toLowerCase()
+        if (s === 'deepseek-account') return 0
+        if (s === 'deepseek-official') return 1
+        if (s === 'vision-http' || /-vision$/.test(s)) return 3
+        return 2
+      }
+      providers.sort((a, b) => providerRank(a.id) - providerRank(b.id))
       const models = {}
       for (const p of providers) {
         try {
