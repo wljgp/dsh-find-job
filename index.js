@@ -360,12 +360,21 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
   const effort = (LLM_SETTINGS && LLM_SETTINGS.effort) || ''
   let limit = Math.max(1000, Number(maxTokens) || 4000)
   let lastError = null
+  // 有些模型（如 Moonshot kimi-k3.x）只接受 temperature=1：先去掉该参数，再退到 1，避免整次调用失败
+  const TEMPERATURE_RE = /invalid temperature|only 1 (?:\.0 )?is allowed/i
+  let temp = temperature
+  let tempRetries = 0
   for (let attempt = 0; attempt < 3; attempt++) {
     let assembler
     try {
-      assembler = await streamOnce(ctx, pid, mid, messages, limit, temperature, signal, effort)
+      assembler = await streamOnce(ctx, pid, mid, messages, limit, temp, signal, effort)
     } catch (e) {
       const msg = String((e && e.message) || e)
+      if (TEMPERATURE_RE.test(msg) && tempRetries < 2) {
+        tempRetries++
+        temp = tempRetries === 1 ? undefined : 1
+        continue
+      }
       if (PROVIDER_AUTH_RE.test(msg)) {
         throw new Error('模型路由 ' + pid + ' 不可用（' + msg.slice(0, 200) + '）。请先在 DSH 中登录 DeepSeek 账号，或确认该路由已配置凭据。')
       }
@@ -375,6 +384,11 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
     if (finish.kind === 'error' || finish.kind === 'aborted') {
       const f = finish.failure
       const msg = 'LLM 调用失败: ' + (f ? f.message : finish.kind) + (f && f.code ? ' (' + f.code + ')' : '')
+      if (TEMPERATURE_RE.test(msg) && tempRetries < 2) {
+        tempRetries++
+        temp = tempRetries === 1 ? undefined : 1
+        continue
+      }
       if (PROVIDER_AUTH_RE.test(msg)) {
         throw new Error('模型路由 ' + pid + ' 不可用（' + msg.slice(0, 200) + '）。请先在 DSH 中登录 DeepSeek 账号，或确认该路由已配置凭据。')
       }
