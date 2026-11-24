@@ -1338,7 +1338,8 @@ async function handleAction(ctx, dbPath, model, provider, body) {
     }
     case 'basic': {
       const db = openDb(dbPath)
-      try { saveBasicProfile(db, body.name, body.current_title, body.years) } finally { db.close() }
+      const title = body.current_title !== undefined ? body.current_title : body.title
+      try { saveBasicProfile(db, body.name, title, body.years) } finally { db.close() }
       return { ok: true }
     }
     case 'note': {

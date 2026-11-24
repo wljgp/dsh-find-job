@@ -317,7 +317,7 @@ window.__ModuleLoader__.load({
         setSaved((s) => ({ ...s, [k]: true }))
         setTimeout(() => setSaved((s) => ({ ...s, [k]: false })), 500)
       }
-      const saveBasicField = (k) => { act('basic', basic).then(() => markSaved('basic-' + k)).catch(() => {}) }
+      const saveBasicField = (k) => { act('basic', { name: basic.name, current_title: basic.title, years: basic.years }).then(() => markSaved('basic-' + k)).catch(() => {}) }
       const saveFiltersField = (k) => { act('settings', { city: filters.city, salary_min: filters.salary }).then(() => markSaved('filter-' + k)).catch(() => {}) }
 
       const onFile = async (e) => {
