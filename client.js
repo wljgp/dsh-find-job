@@ -160,6 +160,10 @@ window.__ModuleLoader__.load({
 .fj-root .match-title { font-weight: 700; font-size: 15px; }
 .fj-root .match-company { color: #374151; }
 .fj-root .match-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; align-self: flex-start; padding-top: 2px; }
+.fj-root .match-toggle { flex: none; width: 22px; height: 22px; line-height: 20px; text-align: center; border: none; background: #f1f4f8; color: #4b5563; border-radius: 6px; cursor: pointer; font-size: 13px; padding: 0; margin: 2px 8px 0 0; }
+.fj-root .match-toggle:hover { background: #e5eaf1; }
+.fj-root .match-card.is-collapsed { background: #fafbfc; }
+.fj-root .match-collapsed-hint { color: #9aa1ac; font-size: 12px; margin-top: 2px; }
 .fj-root .match-badge { display: block; min-width: 64px; font-size: 12.5px; text-align: center; white-space: nowrap; background: #e8f7ee; color: #16a34a; border-radius: 6px; padding: 2px 4px; }
 .fj-root .match-badge.no { background: #fdecec; color: #dc2626; }
 .fj-root .match-dims { margin-top: 10px; }
@@ -617,6 +621,8 @@ window.__ModuleLoader__.load({
 
     function MatchesView({ data, act, notice, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter, focusJob }) {
       const matches = data.matches || []
+      const [collapsed, setCollapsed] = useState({})
+      const isCollapsed = (m) => Object.prototype.hasOwnProperty.call(collapsed, m.job_id) ? collapsed[m.job_id] : (m.fb === 'not_interested')
       const counts = {}
       for (const m of matches) { const k = m.platform || 'manual'; counts[k] = (counts[k] || 0) + 1 }
       const tabs = [['', '全部'], ['boss', 'BOSS直聘'], ['liepin', '猎聘'], ['manual', '手动']]
@@ -641,38 +647,42 @@ window.__ModuleLoader__.load({
             : null,
           list.length === 0 ? h('p', { className: 'muted' }, '尚无结果，职位库打分后自动生成。') : list.map((m) => {
             const reason = m.reason || {}
+            const c = isCollapsed(m)
             const dims = (m.dims || []).map((d, i) => h('div', { key: i },
               h('div', { className: 'dim-row' },
                 h('span', { className: 'dim-name' }, d['维度'] || ''),
                 h('span', { className: 'dim-bar' }, h('span', { className: 'dim-fill ' + scoreClass(d['分']), style: { width: Math.max(2, Math.min(100, d['分'] || 0)) + '%' } })),
                 h('span', { className: 'dim-score' }, d['分'])),
               h('div', { className: 'dim-desc' }, d['说明'] || '')))
-            return h('div', { key: m.job_id, className: 'match-card', 'data-job-id': String(m.job_id) },
+            return h('div', { key: m.job_id, className: 'match-card' + (c ? ' is-collapsed' : ''), 'data-job-id': String(m.job_id) },
               h('div', { className: 'match-head' },
+                h('button', { className: 'match-toggle', title: c ? '展开' : '折叠', onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })) }, c ? '▸' : '▾'),
                 h('div', { className: 'match-side' },
                   h('div', { className: 'score ' + scoreClass(m.score) }, h('span', { className: 'score-num' }, m.score, h('span', { className: 'score-unit' }, '分'))),
                   h('div', { className: 'match-badge' + (m.score >= 60 ? '' : ' no') }, m.score >= 60 ? '建议投递' : '不建议投递')),
                 h('div', { className: 'match-info' },
                   h('div', { className: 'match-title' }, m.title || '', h('span', { className: 'tag conf' }, platformLabel(m.platform))),
                   h('div', { className: 'match-company' }, m.company || '（公司名未知）'),
-                  h('div', { className: 'muted small' }, [m.city, m.salary_text].filter(Boolean).join(' · '))),
+                  h('div', { className: 'muted small' }, [m.city, m.salary_text].filter(Boolean).join(' · ')),
+                  c ? h('div', { className: 'match-collapsed-hint' }, '已折叠 · 点左侧箭头展开') : null),
                 h('div', { className: 'match-actions' },
                   (m.fb || '')
-                    ? h('button', { className: 'btn small', disabled: busyAction === 'feedback', onClick: async () => { try { await act('feedback', { job_id: m.job_id, fb: 'skip' }) } catch {} } }, m.fb === 'interested' ? '取消感兴趣' : '取消不感兴趣')
+                    ? h('button', { className: 'btn small', disabled: busyAction === 'feedback', onClick: async () => { setCollapsed((prev) => ({ ...prev, [m.job_id]: false })); try { await act('feedback', { job_id: m.job_id, fb: 'skip' }) } catch {} } }, m.fb === 'interested' ? '取消感兴趣' : '取消不感兴趣')
                     : (m.score >= 60
-                      ? h('button', { className: 'btn small danger', disabled: busyAction === 'feedback', onClick: async () => { try { await act('feedback', { job_id: m.job_id, fb: 'not_interested' }) } catch {} } }, '不感兴趣')
+                      ? h('button', { className: 'btn small danger', disabled: busyAction === 'feedback', onClick: async () => { setCollapsed((prev) => ({ ...prev, [m.job_id]: true })); try { await act('feedback', { job_id: m.job_id, fb: 'not_interested' }) } catch {} } }, '不感兴趣')
                       : h('button', { className: 'btn small ok', disabled: busyAction === 'feedback', onClick: async () => { try { await act('feedback', { job_id: m.job_id, fb: 'interested' }) } catch {} } }, '感兴趣')))),
-              dims.length ? h('div', { className: 'match-dims' }, dims) : null,
-              (reason.reasons || []).length ? h('div', { className: 'match-reasons' }, h('h4', null, '匹配理由'), h('ul', null, reason.reasons.map((r, i) => h('li', { key: i }, r)))) : null,
-              (reason.misses || []).length ? h('div', { className: 'match-misses' }, h('h4', null, '不匹配点'), h('ul', null, reason.misses.map((r, i) => h('li', { key: i }, r)))) : null,
-              reason.suggestion ? h('div', { className: 'match-suggestion' }, reason.suggestion) : null,
-              m.description ? h('div', { className: 'match-desc' }, h('h4', null, '职位描述'), h('div', { className: 'desc-body', onClick: (e) => e.currentTarget.classList.toggle('expanded') }, m.description)) : null,
-              h('div', { className: 'match-greeting' },
-                h('div', { className: 'greet-head' }, h('h4', null, '打招呼语'), m.url ? h('a', { className: 'btn small', href: m.url, target: '_blank', rel: 'noopener' }, '职位链接') : null),
-                m.greeting ? h('div', null,
-                  h(GreetingBlock, { text: m.greeting['开场白'] || '—' }),
-                  m.greeting['备用话术'] ? h(GreetingBlock, { text: m.greeting['备用话术'] }) : null)
-                  : h('p', { className: 'muted' }, '暂无（重新打分时自动生成）')))
+              c ? null : h('div', { className: 'match-body' },
+                dims.length ? h('div', { className: 'match-dims' }, dims) : null,
+                (reason.reasons || []).length ? h('div', { className: 'match-reasons' }, h('h4', null, '匹配理由'), h('ul', null, reason.reasons.map((r, i) => h('li', { key: i }, r)))) : null,
+                (reason.misses || []).length ? h('div', { className: 'match-misses' }, h('h4', null, '不匹配点'), h('ul', null, reason.misses.map((r, i) => h('li', { key: i }, r)))) : null,
+                reason.suggestion ? h('div', { className: 'match-suggestion' }, reason.suggestion) : null,
+                m.description ? h('div', { className: 'match-desc' }, h('h4', null, '职位描述'), h('div', { className: 'desc-body', onClick: (e) => e.currentTarget.classList.toggle('expanded') }, m.description)) : null,
+                h('div', { className: 'match-greeting' },
+                  h('div', { className: 'greet-head' }, h('h4', null, '打招呼语'), m.url ? h('a', { className: 'btn small', href: m.url, target: '_blank', rel: 'noopener' }, '职位链接') : null),
+                  m.greeting ? h('div', null,
+                    h(GreetingBlock, { text: m.greeting['开场白'] || '—' }),
+                    m.greeting['备用话术'] ? h(GreetingBlock, { text: m.greeting['备用话术'] }) : null)
+                    : h('p', { className: 'muted' }, '暂无（重新打分时自动生成）'))))
           })),
       )
     }
