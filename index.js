@@ -455,7 +455,7 @@ function readNotes(db) {
 }
 
 function readJobs(db) {
-  return db.prepare('SELECT id, platform, title, company, city, salary_text, salary_min, salary_max, exp_text, description, url FROM jobs ORDER BY id DESC').all()
+  return db.prepare('SELECT id, platform, title, company, city, salary_text, salary_min, salary_max, exp_text, description, url, created_at FROM jobs ORDER BY created_at DESC, id DESC').all()
 }
 
 function readJobsWithoutMatch(db) {
@@ -694,7 +694,7 @@ function buildPanelPayload(db) {
     : null
   const notes = readNotes(db)
   const abilities = db.prepare('SELECT id, name, category, evidence, confidence, status FROM abilities ORDER BY sort, id').all()
-  const jobRows = db.prepare('SELECT id, platform, title, company, title_norm, company_norm, city, salary_text, description, url FROM jobs ORDER BY id DESC').all()
+  const jobRows = db.prepare('SELECT id, platform, title, company, title_norm, company_norm, city, salary_text, description, url, created_at FROM jobs ORDER BY created_at DESC, id DESC').all()
   const dup = {}
   for (const j of jobRows) {
     const k = String(j.company_norm || '') + '\x1f' + String(j.title_norm || '')
@@ -765,7 +765,7 @@ function buildPanelPayload(db) {
       return {
         id: j.id, 平台: j.platform, 岗位: j.title || '', 公司: j.company || '',
         城市: j.city || '', 薪资: j.salary_text || '', 分数: scoreMap[j.id] ?? null,
-        链接: j.url || '', 重复数: dup[k] || 1, 重复键: dup[k] > 1 ? k : '',
+        存入时间: j.created_at || '', 链接: j.url || '', 重复数: dup[k] || 1, 重复键: dup[k] > 1 ? k : '',
       }
     }),
     matches,

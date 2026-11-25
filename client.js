@@ -597,7 +597,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'job-filter' },
               tabs.map(([k, label]) => h('button', { key: k, className: 'pf-btn' + (jobPlatform === k ? ' active' : ''), onClick: () => setJobPlatform(k) }, label + '（' + (k ? (counts[k] || 0) : jobs.length) + '）'))),
             h('div', { className: 'row batch-row' },
-              h('span', { className: 'muted' }, (matchingId >= 0) ? ('正在打分：' + (((jobs.find((x) => x.id === matchingId) || {})['岗位']) || '职位') + '（约 20~40 秒…）') : (batch && batch.running) ? ('打分中 ' + ((batch.done || 0)) + '/' + ((batch.total || 0))) : (localMsg || ('未打分 ' + unmatched + ' 个'))),
+              h('span', { className: 'muted' }, (matchingId >= 0) ? ('正在打分：' + (((jobs.find((x) => x.id === matchingId) || {})['岗位']) || '职位') + '（约 20~40 秒…）') : (batch && batch.running) ? ('打分中 ' + ((batch.done || 0)) + '/' + ((batch.total || 0)) + (batch.failed ? ('（失败 ' + batch.failed + '）') : '')) : (localMsg || ('未打分 ' + unmatched + ' 个'))),
               h('button', { className: 'btn primary batch-btn', disabled: !!(batch && batch.running) || unmatched === 0 || matchingId >= 0, onClick: async () => { setLocalMsg('批量打分启动中…'); try { await act('batch_match', {}) } catch (err) { setLocalMsg(String((err && err.message) || err)) } } }, batch && batch.running ? '打分中' : '批量打分'))),
           list.length === 0 ? h('p', { className: 'muted' }, jobs.length ? '当前筛选下没有职位。' : '尚无职位，请先用浏览器插件一键存入，或在上方手动存入。') : list.map((j) => h('div', { key: j.id, className: 'job-row', 'data-id': String(j.id), 'data-dup-key': j['重复数'] > 1 ? encodeURIComponent(j['重复键']) : undefined },
             h('div', { className: 'job-main' },
@@ -605,7 +605,7 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'tag conf' }, platformLabel(j['平台'])),
                 j['重复数'] > 1 ? h('button', { className: 'tag dup', onClick: () => dupJump(j) }, '疑似重复 ×' + j['重复数']) : null),
               h('div', { className: 'job-company' }, j['公司'] ? j['公司'] : h('span', { className: 'muted' }, '（公司名未知）')),
-              h('div', { className: 'muted small' }, [j['城市'], j['薪资']].filter(Boolean).join(' · '))),
+              h('div', { className: 'muted small' }, [j['城市'], j['薪资'], j['存入时间'] ? ('存入 ' + fmtTime(j['存入时间'])) : ''].filter(Boolean).join(' · '))),
             h('div', { className: 'job-actions' },
               j['链接'] ? h('a', { className: 'btn small', href: j['链接'], target: '_blank', rel: 'noopener' }, '职位链接') : null,
               h('button', { className: 'btn small' + (j['分数'] == null ? ' primary' : ''), disabled: j['分数'] != null || matchingId === j.id || !!(batch && batch.running), onClick: async () => { setMatchingId(j.id); try { await act('match', { job_id: j.id }); if (onMatched) onMatched(j.id) } catch {} finally { setMatchingId(-1) } } }, matchingId === j.id ? '打分中…' : (j['分数'] != null ? '已打分' : '匹配打分')),
@@ -931,7 +931,7 @@ window.__ModuleLoader__.load({
             } else if (pollRef.current.wasRunning) {
               pollRef.current.wasRunning = false
               const b = st.batch || pollRef.current.lastBatch || {}
-              if (b.total > 0 && ((b.done || 0) + (b.failed || 0)) >= b.total) {
+              if (b.total > 0 && (b.done || 0) >= b.total) {
                 scrollPos.current['matches'] = 0
                 setFocusJob(null)
                 setTab('matches')
