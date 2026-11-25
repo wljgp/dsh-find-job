@@ -160,8 +160,10 @@ window.__ModuleLoader__.load({
 .fj-root .match-title { font-weight: 700; font-size: 15px; }
 .fj-root .match-company { color: #374151; }
 .fj-root .match-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; align-self: flex-start; padding-top: 2px; }
-.fj-root .match-toggle { flex: none; width: 22px; height: 22px; line-height: 20px; text-align: center; border: none; background: #f1f4f8; color: #4b5563; border-radius: 6px; cursor: pointer; font-size: 13px; padding: 0; margin: 2px 8px 0 0; }
-.fj-root .match-toggle:hover { background: #e5eaf1; }
+.fj-root .match-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e3e8ef; background: #fff; border-radius: 6px; cursor: pointer; padding: 0; margin: 2px 10px 0 0; transition: border-color .15s ease, background .15s ease; }
+.fj-root .match-toggle:hover { border-color: #cbd5e1; background: #f8fafc; }
+.fj-root .match-toggle .chev { width: 7px; height: 7px; border-right: 2px solid #64748b; border-bottom: 2px solid #64748b; transform: rotate(45deg); margin-top: -2px; transition: transform .18s ease; }
+.fj-root .match-card.is-collapsed .match-toggle .chev { transform: rotate(-45deg); margin-top: 2px; }
 .fj-root .match-card.is-collapsed { background: #fafbfc; }
 .fj-root .match-collapsed-hint { color: #9aa1ac; font-size: 12px; margin-top: 2px; }
 .fj-root .match-badge { display: block; min-width: 64px; font-size: 12.5px; text-align: center; white-space: nowrap; background: #e8f7ee; color: #16a34a; border-radius: 6px; padding: 2px 4px; }
@@ -549,7 +551,7 @@ window.__ModuleLoader__.load({
           h('button', { className: 'btn small danger', onClick: () => { if (!window.confirm('删除这条能力？删除后不再参与匹配。')) return; act('ability_delete', { id: a.id }).catch(() => {}) } }, '删除')))
     }
 
-    function JobsView({ data, act, notice, busyAction, jobPlatform, setJobPlatform, status, onMatched }) {
+    function JobsView({ data, act, notice, busyAction, jobPlatform, setJobPlatform, status, onMatched, matchingId, setMatchingId }) {
       const jobs = data.jobs || []
       const [jd, setJd] = useState('')
       const [url, setUrl] = useState('')
@@ -557,7 +559,6 @@ window.__ModuleLoader__.load({
       const [company, setCompany] = useState('')
       const [saveMsg, setSaveMsg] = useState('')
       const [saveKind, setSaveKind] = useState('')
-      const [matchingId, setMatchingId] = useState(-1)
       const [localMsg, setLocalMsg] = useState('')
       const allJobsRef = useRef(jobs)
       allJobsRef.current = jobs
@@ -656,7 +657,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'dim-desc' }, d['说明'] || '')))
             return h('div', { key: m.job_id, className: 'match-card' + (c ? ' is-collapsed' : ''), 'data-job-id': String(m.job_id) },
               h('div', { className: 'match-head' },
-                h('button', { className: 'match-toggle', title: c ? '展开' : '折叠', onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })) }, c ? '▸' : '▾'),
+                h('button', { className: 'match-toggle', title: c ? '展开' : '折叠', onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })) }, h('span', { className: 'chev' })),
                 h('div', { className: 'match-side' },
                   h('div', { className: 'score ' + scoreClass(m.score) }, h('span', { className: 'score-num' }, m.score, h('span', { className: 'score-unit' }, '分'))),
                   h('div', { className: 'match-badge' + (m.score >= 60 ? '' : ' no') }, m.score >= 60 ? '建议投递' : '不建议投递')),
@@ -878,6 +879,7 @@ window.__ModuleLoader__.load({
       const [matchPlatform, setMatchPlatform] = useState('')
       const [jobFilter, setJobFilter] = useState(null)
       const [focusJob, setFocusJob] = useState(null)
+      const [matchingId, setMatchingId] = useState(-1)
       const [llmOpen, setLlmOpen] = useState(false)
       const pollRef = useRef({ wasRunning: false })
       const revRef = useRef('')
@@ -979,7 +981,7 @@ window.__ModuleLoader__.load({
           loading && !data ? h('p', { className: 'muted' }, '读取中…') : null,
           error && !data ? h('div', { className: 'banner-err' }, '读取失败：' + error) : null,
           data ? (tab === 'profile' ? h(ProfileView, { data, act, notice: busy, busyAction })
-            : tab === 'jobs' ? h(JobsView, { data, act, notice: busy, busyAction, jobPlatform, setJobPlatform, status, onMatched: (id) => { scrollPos.current['matches'] = 0; setFocusJob(id); switchTab('matches') } })
+            : tab === 'jobs' ? h(JobsView, { data, act, notice: busy, busyAction, jobPlatform, setJobPlatform, status, onMatched: (id) => { scrollPos.current['matches'] = 0; setFocusJob(id); switchTab('matches') }, matchingId, setMatchingId })
             : tab === 'matches' ? h(MatchesView, { data, act, notice: busy, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter: () => setJobFilter(null), focusJob })
             : h(TipsView, { data, act, notice: busy, busyAction, onMissClick: (ids) => { setJobFilter(ids); switchTab('matches') } })) : null))
     }
