@@ -617,9 +617,8 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function MatchesView({ data, act, notice, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter, focusJob }) {
+    function MatchesView({ data, act, notice, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter, focusJob, collapsed, setCollapsed }) {
       const matches = data.matches || []
-      const [collapsed, setCollapsed] = useState({})
       const isCollapsed = (m) => Object.prototype.hasOwnProperty.call(collapsed, m.job_id) ? collapsed[m.job_id] : (m.fb === 'not_interested')
       const counts = {}
       for (const m of matches) { const k = m.platform || 'manual'; counts[k] = (counts[k] || 0) + 1 }
@@ -879,6 +878,7 @@ window.__ModuleLoader__.load({
       const [jobFilter, setJobFilter] = useState(null)
       const [focusJob, setFocusJob] = useState(null)
       const [matchingId, setMatchingId] = useState(-1)
+      const [collapsed, setCollapsed] = useState({})
       const [llmOpen, setLlmOpen] = useState(false)
       const pollRef = useRef({ wasRunning: false })
       const revRef = useRef('')
@@ -981,7 +981,7 @@ window.__ModuleLoader__.load({
           error && !data ? h('div', { className: 'banner-err' }, '读取失败：' + error) : null,
           data ? (tab === 'profile' ? h(ProfileView, { data, act, notice: busy, busyAction })
             : tab === 'jobs' ? h(JobsView, { data, act, notice: busy, busyAction, jobPlatform, setJobPlatform, status, onMatched: (id) => { scrollPos.current['matches'] = 0; setFocusJob(id); switchTab('matches') }, matchingId, setMatchingId })
-            : tab === 'matches' ? h(MatchesView, { data, act, notice: busy, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter: () => setJobFilter(null), focusJob })
+            : tab === 'matches' ? h(MatchesView, { data, act, notice: busy, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter: () => setJobFilter(null), focusJob, collapsed, setCollapsed })
             : h(TipsView, { data, act, notice: busy, busyAction, onMissClick: (ids) => { setJobFilter(ids); switchTab('matches') } })) : null))
     }
 
