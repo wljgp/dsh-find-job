@@ -148,7 +148,8 @@ window.__ModuleLoader__.load({
 .fj-root .job-row.flash { animation: fjJobFlash 1.6s ease; }
 @keyframes fjJobFlash { 0%, 100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); border-color: #e3e6ea; } 15%, 60% { box-shadow: 0 0 0 3px rgba(37,99,235,.35); border-color: #2563eb; } }
 .fj-root .match-card { border: 1px solid #e3e6ea; border-radius: 12px; padding: 16px 18px; margin-bottom: 14px; background: #fff; }
-.fj-root .match-head { display: flex; gap: 0; align-items: flex-start; }
+.fj-root .match-head { display: flex; gap: 0; align-items: flex-start; cursor: pointer; }
+.fj-root .match-head:hover .match-title { text-decoration: underline; text-decoration-color: #c7cfdb; text-underline-offset: 3px; }
 .fj-root .match-side { width: 118px; flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .fj-root .score { min-width: 64px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 800; line-height: 1.1; padding: 6px; border-radius: 10px; flex-shrink: 0; }
 .fj-root .score-num { display: inline-flex; align-items: flex-end; gap: 1px; line-height: 1; }
@@ -160,10 +161,6 @@ window.__ModuleLoader__.load({
 .fj-root .match-title { font-weight: 700; font-size: 15px; }
 .fj-root .match-company { color: #374151; }
 .fj-root .match-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; align-self: flex-start; padding-top: 2px; }
-.fj-root .match-toggle { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid #e3e8ef; background: #fff; border-radius: 6px; cursor: pointer; padding: 0; margin: 2px 10px 0 0; transition: border-color .15s ease, background .15s ease; }
-.fj-root .match-toggle:hover { border-color: #cbd5e1; background: #f8fafc; }
-.fj-root .match-toggle .chev { width: 7px; height: 7px; border-right: 2px solid #64748b; border-bottom: 2px solid #64748b; transform: rotate(45deg); margin-top: -2px; transition: transform .18s ease; }
-.fj-root .match-card.is-collapsed .match-toggle .chev { transform: rotate(-45deg); margin-top: 2px; }
 .fj-root .match-card.is-collapsed { background: #fafbfc; }
 .fj-root .match-collapsed-hint { color: #9aa1ac; font-size: 12px; margin-top: 2px; }
 .fj-root .match-badge { display: block; min-width: 64px; font-size: 12.5px; text-align: center; white-space: nowrap; background: #e8f7ee; color: #16a34a; border-radius: 6px; padding: 2px 4px; }
@@ -656,8 +653,10 @@ window.__ModuleLoader__.load({
                 h('span', { className: 'dim-score' }, d['分'])),
               h('div', { className: 'dim-desc' }, d['说明'] || '')))
             return h('div', { key: m.job_id, className: 'match-card' + (c ? ' is-collapsed' : ''), 'data-job-id': String(m.job_id) },
-              h('div', { className: 'match-head' },
-                h('button', { className: 'match-toggle', title: c ? '展开' : '折叠', onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })) }, h('span', { className: 'chev' })),
+              h('div', {
+                className: 'match-head', style: { cursor: 'pointer' }, title: c ? '点击展开' : '点击折叠',
+                onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })),
+              },
                 h('div', { className: 'match-side' },
                   h('div', { className: 'score ' + scoreClass(m.score) }, h('span', { className: 'score-num' }, m.score, h('span', { className: 'score-unit' }, '分'))),
                   h('div', { className: 'match-badge' + (m.score >= 60 ? '' : ' no') }, m.score >= 60 ? '建议投递' : '不建议投递')),
@@ -665,8 +664,8 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'match-title' }, m.title || '', h('span', { className: 'tag conf' }, platformLabel(m.platform))),
                   h('div', { className: 'match-company' }, m.company || '（公司名未知）'),
                   h('div', { className: 'muted small' }, [m.city, m.salary_text].filter(Boolean).join(' · ')),
-                  c ? h('div', { className: 'match-collapsed-hint' }, '已折叠 · 点左侧箭头展开') : null),
-                h('div', { className: 'match-actions' },
+                  c ? h('div', { className: 'match-collapsed-hint' }, '已折叠 · 点击此行展开') : null),
+                h('div', { className: 'match-actions', onClick: (e) => e.stopPropagation(), style: { cursor: 'default' } },
                   (m.fb || '')
                     ? h('button', { className: 'btn small', disabled: busyAction === 'feedback', onClick: async () => { setCollapsed((prev) => ({ ...prev, [m.job_id]: false })); try { await act('feedback', { job_id: m.job_id, fb: 'skip' }) } catch {} } }, m.fb === 'interested' ? '取消感兴趣' : '取消不感兴趣')
                     : (m.score >= 60
