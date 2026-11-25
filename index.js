@@ -789,7 +789,7 @@ async function handlePanelRequest(request, dbPath) {
 // ---------- 面板操作层（浏览器按钮调用） ----------
 
 const JOBS = {
-  batch: { running: false, total: 0, done: 0, failed: 0, current: '', message: '' },
+  batch: { running: false, cancel: false, total: 0, done: 0, failed: 0, current: '', message: '' },
   parse: { running: false, message: '', ok: null },
 }
 
@@ -967,6 +967,7 @@ async function runBatchJob(ctx, dbPath, model, provider) {
   const st = JOBS.batch
   if (st.running) return { started: false, message: '已有批量打分任务在运行' }
   st.running = true
+  st.cancel = false
   st.total = 0
   st.done = 0
   st.failed = 0
@@ -985,6 +986,7 @@ async function runBatchJob(ctx, dbPath, model, provider) {
     if (!jobs.length) { st.message = '没有未打分的职位'; return { started: false, message: st.message } }
     if (!abilities.length) { st.message = '还没有已确认的能力'; return { started: false, message: st.message } }
     for (const job of jobs) {
+      if (st.cancel) { st.message = '已停止'; break }
       st.current = job.title || job.company || ('#' + job.id)
       try {
         const db2 = openDb(dbPath)
@@ -1015,6 +1017,7 @@ async function runBatchJob(ctx, dbPath, model, provider) {
     return { started: true, total: st.total }
   } finally {
     st.running = false
+    st.cancel = false
     st.current = ''
   }
 }
@@ -1415,6 +1418,11 @@ async function handleAction(ctx, dbPath, model, provider, body) {
       if (JOBS.batch.running) return { ok: false, message: '已有批量打分任务在运行' }
       void runBatchJob(ctx, dbPath, model, needProvider()).catch(() => {})
       return { ok: true, started: true, message: '批量打分已开始（后台执行中…）' }
+    }
+    case 'batch_cancel': {
+      if (!JOBS.batch.running) return { ok: true, message: '当前没有运行中的批量任务' }
+      JOBS.batch.cancel = true
+      return { ok: true, message: '正在停止：当前职位处理完后结束' }
     }
     case 'parse_resume': {
       let text = String(body.text || '').trim()
