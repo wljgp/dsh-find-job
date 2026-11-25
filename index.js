@@ -319,6 +319,9 @@ function parseJsonLoose(text) {
 // 只用 DSH 里「登录账号」那条模型路由（与 DSH 对话一致），不碰 API-key 路由，
 // 更不碰任何外部服务的 key。路由名默认 deepseek-account，可用 config.provider 覆盖。
 const PROVIDER_AUTH_RE = /MISSING_CREDENTIAL|no API key|ACCOUNT_SIGN_IN_REQUIRED|unauthorized|invalid_api_key|not signed in|登录|401|403/i
+// 瞬时错误（网络/限流/网关/超时）：重试一次大概率能成，避免「点一次没用、再点才好」
+const TRANSIENT_RE = /timeout|timed out|超时|econnreset|econnrefused|etimedout|enotfound|econnaborted|socket hang up|network|网络|rate.?limit|too many requests|429|500|502|503|504|overloaded|temporaril|服务繁忙|aborted/i
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)) }
 
 let PLUGIN_CONFIG = {}
 // 用户在面板里选定的模型设置（留空=跟随 DSH 默认）
@@ -364,12 +367,24 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
   const TEMPERATURE_RE = /invalid temperature|only 1 (?:\.0 )?is allowed/i
   let temp = temperature
   let tempRetries = 0
+  let transientRetries = 0
+  // 面板路径没有外部 signal：给每次调用加超时保护，避免某次请求挂起后把批量任务和按钮都卡死
+  const timeoutMs = Math.min(300000, Math.max(60000, (Math.max(1000, Number(maxTokens) || 4000)) * 30))
   for (let attempt = 0; attempt < 3; attempt++) {
+    let ac = null
+    let sig = signal
+    if (!sig) {
+      ac = new AbortController()
+      sig = ac.signal
+      ac._timeoutTimer = setTimeout(() => { try { ac.abort(new Error('LLM 调用超时（' + Math.round(timeoutMs / 1000) + ' 秒）')) } catch {} }, timeoutMs)
+    }
     let assembler
     try {
-      assembler = await streamOnce(ctx, pid, mid, messages, limit, temp, signal, effort)
+      assembler = await streamOnce(ctx, pid, mid, messages, limit, temp, sig, effort)
     } catch (e) {
-      const msg = String((e && e.message) || e)
+      if (ac && ac._timeoutTimer) clearTimeout(ac._timeoutTimer)
+      let msg = String((e && e.message) || e)
+      if (ac && ac.signal.aborted && ac.signal.reason && /abort/i.test(msg)) msg = String(ac.signal.reason && ac.signal.reason.message || ac.signal.reason)
       if (TEMPERATURE_RE.test(msg) && tempRetries < 2) {
         tempRetries++
         temp = tempRetries === 1 ? undefined : 1
@@ -378,8 +393,14 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
       if (PROVIDER_AUTH_RE.test(msg)) {
         throw new Error('模型路由 ' + pid + ' 不可用（' + msg.slice(0, 200) + '）。请先在 DSH 中登录 DeepSeek 账号，或确认该路由已配置凭据。')
       }
+      if (TRANSIENT_RE.test(msg) && transientRetries < 1) {
+        transientRetries++
+        await sleep(1200)
+        continue
+      }
       throw e
     }
+    if (ac && ac._timeoutTimer) clearTimeout(ac._timeoutTimer)
     const finish = assembler.finish
     if (finish.kind === 'error' || finish.kind === 'aborted') {
       const f = finish.failure
@@ -391,6 +412,11 @@ async function chatJson(ctx, provider, model, system, user, maxTokens, temperatu
       }
       if (PROVIDER_AUTH_RE.test(msg)) {
         throw new Error('模型路由 ' + pid + ' 不可用（' + msg.slice(0, 200) + '）。请先在 DSH 中登录 DeepSeek 账号，或确认该路由已配置凭据。')
+      }
+      if (TRANSIENT_RE.test(msg) && transientRetries < 1) {
+        transientRetries++
+        await sleep(1200)
+        continue
       }
       throw new Error(msg)
     }
