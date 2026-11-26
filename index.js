@@ -557,7 +557,27 @@ function saveProfileNote(db, kind, ref, note) {
 
 // ---------- 匹配打分（LLM） ----------
 
-function buildMatchUser(job, abilities, profile) {
+function noteLines(notes) {
+  const lines = []
+  for (const [company, note] of Object.entries((notes && notes.work) || {})) lines.push(`- ${company}：${note}`)
+  for (const [name, note] of Object.entries((notes && notes.project) || {})) lines.push(`- 项目「${name}」：${note}`)
+  return lines
+}
+
+function readCollapsed(db) {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'matches_collapsed'").get()
+    const map = row ? safeJson(row.value, {}) : {}
+    const out = {}
+    for (const [k, v] of Object.entries(map || {})) {
+      const id = Number(k)
+      if (Number.isFinite(id) && id > 0) out[id] = !!v
+    }
+    return out
+  } catch { return {} }
+}
+
+function buildMatchUser(job, abilities, profile, notes) {
   const confirmed = abilities.map(a => ({ 能力: a.name, 证据: a.evidence || '', 置信度: a.confidence || '' }))
   const profileAbs = {
     当前职位: profile['当前职位'] || '',
@@ -573,9 +593,14 @@ function buildMatchUser(job, abilities, profile) {
     经验要求: job.exp_text || '',
     职责与要求: job.description || '',
   }
+  const nl = noteLines(notes)
+  const notesText = nl.length
+    ? '\n\n经历补充说明（求职者本人补充的背景/细节/想强调的点，涉及的工作经历或项目应据此理解；只采用这里写明的事实，不要编造）：\n' + nl.join('\n')
+    : ''
   return '已确认能力画像：\n' + JSON.stringify(confirmed, null, 2)
     + '\n\n履历摘要：\n' + JSON.stringify(profileAbs, null, 2)
     + '\n\n职位描述：\n' + JSON.stringify(jobAbs, null, 2)
+    + notesText
 }
 
 function normalizeMatchResult(data) {
@@ -762,6 +787,7 @@ function buildPanelPayload(db) {
       }
     })(),
     adjusts,
+    collapsed: readCollapsed(db),
     gap_report: savedGapReport || null,
     adjust_feedback: safeJson(settings.adjust_feedback, {}),
     state: {
@@ -1001,12 +1027,13 @@ async function runBatchJob(ctx, dbPath, model, provider) {
   st.message = ''
   try {
     const db = openDb(dbPath)
-    let jobs, abilities, profile, settings
+    let jobs, abilities, profile, settings, notes
     try {
       jobs = readJobsWithoutMatch(db)
       abilities = readAbilities(db)
       profile = readProfile(db)
       settings = readSettings(db)
+      notes = readNotes(db)
     } finally { db.close() }
     st.total = jobs.length
     if (!jobs.length) { st.message = '没有未打分的职位'; return { started: false, message: st.message } }
@@ -1023,7 +1050,7 @@ async function runBatchJob(ctx, dbPath, model, provider) {
             st.done += 1
             continue
           }
-          const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile), 4000, 0.1)
+          const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile, notes), 4000, 0.1)
           const r = normalizeMatchResult(data)
           upsertMatch(db2, job.id, r.score, r.dims, { reasons: r.reasons, misses: r.misses, suggestion: r.suggestion })
           if (r.score > 0) {
@@ -1376,6 +1403,18 @@ async function handleAction(ctx, dbPath, model, provider, body) {
       try { saveProfileNote(db, body.kind, body.ref, body.note) } finally { db.close() }
       return { ok: true }
     }
+    case 'set_collapsed': {
+      const db = openDb(dbPath)
+      try {
+        const map = {}
+        for (const [k, v] of Object.entries(body.collapsed || {})) {
+          const id = Number(k)
+          if (Number.isFinite(id) && id > 0) map[id] = !!v
+        }
+        saveSettingsValueJson(db, 'matches_collapsed', map)
+      } finally { db.close() }
+      return { ok: true }
+    }
     case 'save_job': {
       return saveJobPayload(dbPath, body)
     }
@@ -1409,12 +1448,13 @@ async function handleAction(ctx, dbPath, model, provider, body) {
     }
     case 'match': {
       const db = openDb(dbPath)
-      let job, abilities, profile, settings
+      let job, abilities, profile, settings, notes
       try {
         job = readJobById(db, Number(body.job_id))
         abilities = readAbilities(db)
         profile = readProfile(db)
         settings = readSettings(db)
+        notes = readNotes(db)
       } finally { db.close() }
       if (!job) return { ok: false, message: '职位不存在' }
       if (!abilities.length) return { ok: false, message: '还没有已确认的能力：请先解析履历并确认能力' }
@@ -1425,7 +1465,7 @@ async function handleAction(ctx, dbPath, model, provider, body) {
         return { ok: true, hard_rejected: true, score: 0, message: '硬条件不满足：' + reject }
       }
       const p = needProvider()
-      const data = await chatJson(ctx, p, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile), 4000, 0.1)
+      const data = await chatJson(ctx, p, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile, notes), 4000, 0.1)
       const r = normalizeMatchResult(data)
       const db2 = openDb(dbPath)
       try { upsertMatch(db2, job.id, r.score, r.dims, { reasons: r.reasons, misses: r.misses, suggestion: r.suggestion }) } finally { db2.close() }
@@ -1869,11 +1909,12 @@ export function apply(ctx, config = {}) {
     },
     async execute(args, exec) {
       const db = openDb(dbPath)
-      let settings, abilities, profile
+      let settings, abilities, profile, notes
       try {
         settings = readSettings(db)
         abilities = readAbilities(db)
         profile = readProfile(db)
+        notes = readNotes(db)
       } finally {
         db.close()
       }
@@ -1891,7 +1932,7 @@ export function apply(ctx, config = {}) {
         exp_text: '', description: args.jd,
       }
       const provider = resolveProvider()
-      const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile), 4000, 0.1, exec.signal)
+      const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile, notes), 4000, 0.1, exec.signal)
       const r = normalizeMatchResult(data)
       return { hard_rejected: false, score: r.score, dims: r.dims, reason: { reasons: r.reasons, misses: r.misses, suggestion: r.suggestion } }
     },
@@ -1908,11 +1949,12 @@ export function apply(ctx, config = {}) {
     },
     async execute(_args, exec) {
       const db = openDb(dbPath)
-      let abilities, profile, settings
+      let abilities, profile, settings, notes
       try {
         abilities = readAbilities(db)
         profile = readProfile(db)
         settings = readSettings(db)
+        notes = readNotes(db)
       } finally {
         db.close()
       }
@@ -1937,7 +1979,7 @@ export function apply(ctx, config = {}) {
             upsertMatch(db2, job.id, 0, [], reason)
             item.score = 0; item.hard_rejected = true
           } else {
-            const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile), 4000, 0.1, exec.signal)
+            const data = await chatJson(ctx, provider, model, MATCH_SYSTEM, buildMatchUser(job, abilities, profile, notes), 4000, 0.1, exec.signal)
             const r = normalizeMatchResult(data)
             const reason = { reasons: r.reasons, misses: r.misses, suggestion: r.suggestion }
             upsertMatch(db2, job.id, r.score, r.dims, reason)

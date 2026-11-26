@@ -434,7 +434,7 @@ window.__ModuleLoader__.load({
               h('span', { className: 'sub' }, ' ' + (e['时间'] || '') + ' · ' + (e['行业'] || ''))),
             h('div', { className: 'sub' }, e['职责与成果'] || '')),
           h('div', { className: 'detail-note' },
-            h('textarea', { defaultValue: (notes.work || {})[e['公司'] || ''] || '', placeholder: '补充背景/细节，将整合进简历调整', onBlur: (ev) => { act('note', { kind: 'work', ref: e['公司'] || '', note: ev.target.value }).then(() => markSaved('note-work-' + (e['公司'] || ''))).catch(() => {}) } }))),
+            h('textarea', { defaultValue: (notes.work || {})[e['公司'] || ''] || '', placeholder: '补充背景/细节，用于匹配打分与简历调整', onBlur: (ev) => { act('note', { kind: 'work', ref: e['公司'] || '', note: ev.target.value }).then(() => markSaved('note-work-' + (e['公司'] || ''))).catch(() => {}) } }))),
         saved['note-work-' + (e['公司'] || '')] ? h('div', { key: 'w' + i + 'tip', className: 'save-tip', style: { margin: '0 0 8px' } }, '已保存') : null,
       ].filter(Boolean))
       const projects = (p['项目'] || []).map((e, i) => [
@@ -443,7 +443,7 @@ window.__ModuleLoader__.load({
             h('div', { className: 'head' }, e['名称'] || '', h('span', { className: 'sub' }, ' ' + (e['角色'] || ''))),
             h('div', { className: 'sub' }, e['内容'] || '')),
           h('div', { className: 'detail-note' },
-            h('textarea', { defaultValue: (notes.project || {})[e['名称'] || ''] || '', placeholder: '补充背景/细节，将整合进简历调整', onBlur: (ev) => { act('note', { kind: 'project', ref: e['名称'] || '', note: ev.target.value }).then(() => markSaved('note-project-' + (e['名称'] || ''))).catch(() => {}) } }))),
+            h('textarea', { defaultValue: (notes.project || {})[e['名称'] || ''] || '', placeholder: '补充背景/细节，用于匹配打分与简历调整', onBlur: (ev) => { act('note', { kind: 'project', ref: e['名称'] || '', note: ev.target.value }).then(() => markSaved('note-project-' + (e['名称'] || ''))).catch(() => {}) } }))),
         saved['note-project-' + (e['名称'] || '')] ? h('div', { key: 'p' + i + 'tip', className: 'save-tip', style: { margin: '0 0 8px' } }, '已保存') : null,
       ].filter(Boolean))
       const edu = (p['教育'] || []).map((e, i) => h('div', { key: 'e' + i, className: 'detail-item' },
@@ -617,7 +617,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function MatchesView({ data, act, notice, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter, focusJob, collapsed, setCollapsed }) {
+    function MatchesView({ data, act, notice, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter, focusJob, collapsed, toggleCollapsed }) {
       const matches = data.matches || []
       const isCollapsed = (m) => Object.prototype.hasOwnProperty.call(collapsed, m.job_id) ? collapsed[m.job_id] : (m.fb === 'not_interested')
       const counts = {}
@@ -654,7 +654,7 @@ window.__ModuleLoader__.load({
             return h('div', { key: m.job_id, className: 'match-card' + (c ? ' is-collapsed' : ''), 'data-job-id': String(m.job_id) },
               h('div', {
                 className: 'match-head', style: { cursor: 'pointer' }, title: c ? '点击展开' : '点击折叠',
-                onClick: () => setCollapsed((prev) => ({ ...prev, [m.job_id]: !c })),
+                onClick: () => toggleCollapsed(m.job_id, !c),
               },
                 h('div', { className: 'match-side' },
                   h('div', { className: 'score ' + scoreClass(m.score) }, h('span', { className: 'score-num' }, m.score, h('span', { className: 'score-unit' }, '分'))),
@@ -666,9 +666,9 @@ window.__ModuleLoader__.load({
                   c ? h('div', { className: 'match-collapsed-hint' }, '已折叠 · 点击此行展开') : null),
                 h('div', { className: 'match-actions', onClick: (e) => e.stopPropagation(), style: { cursor: 'default' } },
                   (m.fb || '')
-                    ? h('button', { className: 'btn small', disabled: busyAction === 'feedback', onClick: async () => { setCollapsed((prev) => ({ ...prev, [m.job_id]: false })); try { await act('feedback', { job_id: m.job_id, fb: 'skip' }) } catch {} } }, m.fb === 'interested' ? '取消感兴趣' : '取消不感兴趣')
+                    ? h('button', { className: 'btn small', disabled: busyAction === 'feedback', onClick: async () => { toggleCollapsed(m.job_id, false); try { await act('feedback', { job_id: m.job_id, fb: 'skip' }) } catch {} } }, m.fb === 'interested' ? '取消感兴趣' : '取消不感兴趣')
                     : (m.score >= 60
-                      ? h('button', { className: 'btn small danger', disabled: busyAction === 'feedback', onClick: async () => { setCollapsed((prev) => ({ ...prev, [m.job_id]: true })); try { await act('feedback', { job_id: m.job_id, fb: 'not_interested' }) } catch {} } }, '不感兴趣')
+                      ? h('button', { className: 'btn small danger', disabled: busyAction === 'feedback', onClick: async () => { toggleCollapsed(m.job_id, true); try { await act('feedback', { job_id: m.job_id, fb: 'not_interested' }) } catch {} } }, '不感兴趣')
                       : h('button', { className: 'btn small ok', disabled: busyAction === 'feedback', onClick: async () => { try { await act('feedback', { job_id: m.job_id, fb: 'interested' }) } catch {} } }, '感兴趣')))),
               c ? null : h('div', { className: 'match-body' },
                 dims.length ? h('div', { className: 'match-dims' }, dims) : null,
@@ -916,6 +916,32 @@ window.__ModuleLoader__.load({
 
       useEffect(() => { ensureCss(); load() }, [load])
 
+      const collapsedSynced = useRef(false)
+      useEffect(() => {
+        if (collapsedSynced.current) return
+        const remote = data && data.collapsed
+        if (!remote || typeof remote !== 'object') return
+        collapsedSynced.current = true
+        setCollapsed((prev) => {
+          const next = { ...remote }
+          for (const [k, v] of Object.entries(prev)) next[k] = v
+          return next
+        })
+      }, [data])
+
+      const persistCollapsed = useCallback((next) => {
+        post(ROUTE_ACTION, { action: 'set_collapsed', collapsed: next }).catch(() => {})
+      }, [])
+
+      const toggleCollapsed = useCallback((id, value) => {
+        setCollapsed((prev) => {
+          if (prev[id] === value) return prev
+          const next = { ...prev, [id]: value }
+          Promise.resolve().then(() => persistCollapsed(next))
+          return next
+        })
+      }, [persistCollapsed])
+
       useEffect(() => {
         const onFocus = () => { load() }
         const onVisible = () => { if (!document.hidden) load() }
@@ -981,7 +1007,7 @@ window.__ModuleLoader__.load({
           error && !data ? h('div', { className: 'banner-err' }, '读取失败：' + error) : null,
           data ? (tab === 'profile' ? h(ProfileView, { data, act, notice: busy, busyAction })
             : tab === 'jobs' ? h(JobsView, { data, act, notice: busy, busyAction, jobPlatform, setJobPlatform, status, onMatched: (id) => { scrollPos.current['matches'] = 0; setFocusJob(id); switchTab('matches') }, matchingId, setMatchingId })
-            : tab === 'matches' ? h(MatchesView, { data, act, notice: busy, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter: () => setJobFilter(null), focusJob, collapsed, setCollapsed })
+            : tab === 'matches' ? h(MatchesView, { data, act, notice: busy, busyAction, matchPlatform, setMatchPlatform, jobFilter, clearJobFilter: () => setJobFilter(null), focusJob, collapsed, toggleCollapsed })
             : h(TipsView, { data, act, notice: busy, busyAction, onMissClick: (ids) => { setJobFilter(ids); switchTab('matches') } })) : null))
     }
 
